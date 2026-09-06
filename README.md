@@ -2,7 +2,7 @@
 
 Experimental LAN-only video streamer for selected HiChip/Genbolt cameras. It talks directly to the camera over the observed PPPP/HiChip protocol, reconstructs HXVF video records, decrypts the encrypted HEVC prefix, and optionally uses FFmpeg to publish an H.264/HLS stream.
 
-> **Status:** v0.22.0. This release is based on a working v0.21.7 deployment and has been validated after externalizing device-specific configuration and captured session material. Device-specific captured authentication/session material is deliberately **not included** in the public tree.
+> **Status:** v0.22.1. This maintenance release adds dynamic camera-IP rediscovery after DHCP address changes, while retaining the externalized device-specific configuration and captured session material introduced in v0.22.0. Device-specific captured authentication/session material is deliberately **not included** in the public tree.
 
 ## Why this project exists
 
@@ -17,6 +17,7 @@ The tested camera produced HEVC at 2304x1296 and about 12.5 fps. The default HLS
 ## What works
 
 - LAN discovery and PPPP session establishment.
+- Dynamic camera-IP rediscovery: `--camera-ip` is treated as a preferred address and a valid F141 reply from a new address can be adopted automatically after a restart/reconnect.
 - HiChip command/session replay through the point where the D1/02 media channel starts.
 - D102 sequencing, ACK handling, duplicate/late-packet handling, and HXVF reassembly.
 - AES-128-ECB + XOR `0x3F` decryption of the encrypted 96-byte I-frame prefix observed on the tested device.
@@ -30,7 +31,7 @@ The tested camera produced HEVC at 2304x1296 and about 12.5 fps. The default HLS
 
 The working research build contained device-specific values and opaque packets captured from a real camera. Publishing those bytes would both expose private device material and disclose more of the authentication/session exchange than is necessary for the first public release.
 
-v0.22.0 therefore keeps the following outside the repository:
+v0.22.x therefore keeps the following outside the repository:
 
 ```text
 private_material/
@@ -80,6 +81,18 @@ python hichip_client_launcher.py ^
 ```
 
 Passing the key on the command line can expose it through shell history or process listings. Environment variables or service-manager environment settings are preferable for long-running installations.
+
+### Dynamic camera IP rediscovery
+
+By default, `--camera-ip` is a **preferred address**, not a permanent lock. If the camera receives a different DHCP lease and the streamer reconnects, a valid LAN `F141` reply from the new address is adopted automatically. The log will report the configured and discovered addresses.
+
+If your LAN contains multiple compatible HiChip cameras and you want to disable this behavior, add:
+
+```text
+--strict-camera-ip
+```
+
+With strict mode enabled, only `F141` replies from the configured `--camera-ip` are accepted. A DHCP reservation is still recommended for unattended deployments.
 
 When HLS is enabled, the playlist is available at:
 

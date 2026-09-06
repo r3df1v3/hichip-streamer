@@ -793,9 +793,10 @@ class SessionDump:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="HiChip LAN PPPP client 0.22.0: public release with external private material."
+        description="HiChip LAN PPPP client 0.22.1: dynamic camera IP rediscovery."
     )
-    parser.add_argument("--camera-ip", required=True, help="Camera IPv4 address on the LAN.")
+    parser.add_argument("--camera-ip", required=True, help="Preferred camera IPv4 address on the LAN. Used as a hint; by default a valid F141 reply from a new IP is adopted automatically.")
+    parser.add_argument("--strict-camera-ip", action="store_true", help="Require F141 replies to come from --camera-ip. Disables dynamic IP rediscovery.")
     parser.add_argument("--local-ip", help="Local LAN IPv4 address; auto-detected when omitted.")
     parser.add_argument("--base-port", type=int, default=0, help="Optional fixed primary UDP port.")
     parser.add_argument("--discover-port", type=int, default=32108)
@@ -904,7 +905,7 @@ def main(argv=None) -> int:
     )
     if args.log_file:
         sys.stderr = rotating_log
-        print("\n=== HiChip Streamer v0.22.0 START ===", file=sys.stderr, flush=True)
+        print("\n=== HiChip Streamer v0.22.1 START ===", file=sys.stderr, flush=True)
         print(f"PID={os.getpid()} cwd={Path.cwd()}", file=sys.stderr, flush=True)
 
     if not args.video_key:
@@ -954,7 +955,7 @@ def main(argv=None) -> int:
     try:
         wake, initial_primary, initial_secondary, df_wake, df_primary, df_secondary = make_consecutive_sockets(local_ip, args.base_port)
     except OSError as exc:
-        print(f"Error preparando sockets: {exc}", file=sys.stderr)
+        print(f"Error preparing sockets: {exc}", file=sys.stderr)
         return 2
 
     primary = initial_primary
@@ -1077,7 +1078,7 @@ def main(argv=None) -> int:
             if state.peer is None and rotating_until is None and now - pair_started >= args.pair_lifetime:
                 print(
                     f"PPPP pair#{pair_generation} expired after {bursts_this_pair} bursts; "
-                    f"recreando en {args.pair_pause:.1f}s.", file=sys.stderr, flush=True,
+                    f"recreating in {args.pair_pause:.1f}s.", file=sys.stderr, flush=True,
                 )
                 primary.close(); secondary.close()
                 rotating_until = now + max(0.0, args.pair_pause)
@@ -1163,30 +1164,51 @@ def main(argv=None) -> int:
                     if peer[0] == local_ip and (data == DISCOVER or data == wake_packet):
                         continue
                     is_d102 = len(data) >= 8 and data[:2] == b"\xf1\xd0" and data[4:6] == b"\xd1\x02"
-                    # Fast-path multimedia: imprimir 128 bytes de cada D102 a consola
+                    # Fast-path multimedia: printing 128 bytes from every D102 packet to the console
                     # blocked the receive loop long enough to lose UDP packets.
                     if not is_d102:
                         log_rx(label, sock, data, peer)
                     state.rx_total += 1
-                    if peer[0] != args.camera_ip:
-                        continue
-                    if data[:2] == b"\xf1A":
-                        state.f141 += 1
-                        if state.peer is None:
-                            state.peer = peer
-                            state.first_hello_at = time.monotonic()
-                            deadline = max(deadline, time.monotonic() + args.post_hello_seconds)
+                    is_hello = (
+                        len(data) >= 4
+                        and data[:2] == b"\xf1A"
+                        and int.from_bytes(data[2:4], "big") == len(data) - 4
+                    )
+
+                    # Before a peer is selected, only a LAN_HELLO can establish the camera
+                    # endpoint. By default --camera-ip is a hint, not a permanent lock: if
+                    # DHCP changes the camera address, the first valid F141 reply is adopted.
+                    if state.peer is None:
+                        if not is_hello:
+                            continue
+                        if args.strict_camera_ip and peer[0] != args.camera_ip:
+                            continue
+
+                        state.peer = peer
+                        state.first_hello_at = time.monotonic()
+                        deadline = max(deadline, time.monotonic() + args.post_hello_seconds)
+                        if peer[0] != args.camera_ip:
                             print(
-                                f"CAMERA FOUND: {peer[0]}:{peer[1]} with pair#{pair_generation} "
-                                f"after {time.monotonic()-started:.3f}s and {burst} bursts.",
-                                file=sys.stderr,
+                                f"CAMERA IP CHANGED: configured {args.camera_ip}, discovered "
+                                f"{peer[0]}:{peer[1]}; adopting discovered endpoint.",
+                                file=sys.stderr, flush=True,
                             )
+                        print(
+                            f"CAMERA FOUND: {peer[0]}:{peer[1]} with pair#{pair_generation} "
+                            f"after {time.monotonic()-started:.3f}s and {burst} bursts.",
+                            file=sys.stderr,
+                        )
+
+                    # Once selected, accept traffic only from that exact UDP endpoint.
+                    if peer != state.peer:
+                        continue
+
+                    if is_hello:
+                        state.f141 += 1
                         reply = b"\xf1B" + data[2:]
                         for out_label, out_sock in (("primary", primary), ("secondary", secondary)):
                             send_logged(out_label, out_sock, reply, peer)
                             state.f142 += 1
-                        continue
-                    if state.peer is not None and peer != state.peer:
                         continue
                     if data[:2] == b"\xf1\xe0":
                         state.punches += 1
@@ -1358,7 +1380,7 @@ def main(argv=None) -> int:
             )
             return 3
         print(
-            f"Handshake parcial: peer={state.peer} F141={state.f141} F142={state.f142} "
+            f"Partial handshake: peer={state.peer} F141={state.f141} F142={state.f142} "
             f"PUNCH={state.punches} F1E1={state.f1e1} F1F0={state.f1f0} "
             f"BOOT={state.bootstrap_sent}/{state.bootstrap_acked} ACKED={sorted(state.acked_sequences)} "
             f"CMDS_RX={state.camera_commands} DATA_RX={state.data_rx} "
@@ -1387,7 +1409,7 @@ def main(argv=None) -> int:
         try: secondary.close()
         except Exception: pass
         if args.log_file:
-            print("=== HiChip Streamer v0.22.0 STOP ===", file=sys.stderr, flush=True)
+            print("=== HiChip Streamer v0.22.1 STOP ===", file=sys.stderr, flush=True)
             sys.stderr = original_stderr
             rotating_log.close()
 

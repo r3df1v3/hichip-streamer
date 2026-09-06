@@ -33,3 +33,8 @@ The old NOX/ADB screenshot chain can therefore be removed completely. Still-imag
 v0.22.0 removes real camera IP/MAC defaults and the embedded AES video key. It also removes captured opaque bootstrap and late-session F1D0 packets from the repository. Those files remain external private material until their semantics and credential/session relationship are better understood.
 
 All user-facing strings, comments, documentation, and build messages were converted to English for the public repository.
+
+
+## v0.22.1: resilient DHCP rediscovery
+
+A long-running deployment exposed a reconnect bug: after the camera obtained a new DHCP address, the streamer continued receiving valid LAN `F141` replies but ignored them because their source IP no longer matched the configured `--camera-ip`. v0.22.1 changes the configured address into a preferred hint by default and adopts the newly discovered endpoint. `--strict-camera-ip` restores fixed-IP matching for networks with multiple compatible cameras.

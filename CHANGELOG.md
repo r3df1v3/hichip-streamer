@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.22.1 - dynamic camera rediscovery
+
+- Fixed a reconnect failure when DHCP changes the camera IPv4 address.
+- `--camera-ip` now acts as the preferred camera address; the first valid LAN `F141` response can be adopted from a different IP.
+- Added `--strict-camera-ip` for deployments that require the previous fixed-IP behavior.
+- Once a camera endpoint is selected, session traffic is restricted to that exact IP/UDP-port tuple.
+- Added explicit logging when the configured camera IP differs from the discovered address.
+- Completed translation of a few remaining runtime messages/comments to English.
+- Renamed the Windows client build to `hichip-client221.exe`.
+
 ## 0.22.0 - public release
 
 - Removed real camera IP, wake MAC, and AES video-key defaults.
