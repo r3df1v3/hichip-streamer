@@ -241,12 +241,21 @@ class FfmpegHlsSink:
     network path is now fully decoupled from the HLS encoder.
     """
 
-    def __init__(self, ffmpeg: str, out_dir: str | None, fps: float, hls_time: float, list_size: int):
+    def __init__(
+        self,
+        ffmpeg: str,
+        out_dir: str | None,
+        fps: float,
+        hls_time: float,
+        list_size: int,
+        delete_threshold: int,
+    ):
         self.ffmpeg = ffmpeg
         self.out_dir = Path(out_dir).resolve() if out_dir else None
         self.fps = fps
         self.hls_time = hls_time
         self.list_size = list_size
+        self.delete_threshold = delete_threshold
         self.proc: subprocess.Popen | None = None
         self.failed = False
         self.bytes_written = 0
@@ -338,12 +347,18 @@ class FfmpegHlsSink:
             "-f", "hls",
             "-hls_time", str(self.hls_time),
             "-hls_list_size", str(self.list_size),
+            "-hls_delete_threshold", str(self.delete_threshold),
             "-hls_flags", "delete_segments+omit_endlist+program_date_time+independent_segments",
             "-hls_segment_filename", str(segment_pattern),
             str(playlist),
         ]
         print(
             f"HLS: asynchronous FFmpeg HEVC->H.264 1280x720, {self.fps:g} fps, IDR every {self.hls_time:g}s.",
+            file=sys.stderr, flush=True,
+        )
+        print(
+            f"HLS WINDOW: {self.list_size} live segments; "
+            f"keep {self.delete_threshold} unreferenced segments before deletion.",
             file=sys.stderr, flush=True,
         )
         print("HLS: D102 receive/ACK no longer waits for FFmpeg.", file=sys.stderr, flush=True)
@@ -793,7 +808,7 @@ class SessionDump:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="HiChip LAN PPPP client 0.22.1: dynamic camera IP rediscovery."
+        description="HiChip LAN PPPP client 0.22.2: resilient live HLS playback."
     )
     parser.add_argument("--camera-ip", required=True, help="Preferred camera IPv4 address on the LAN. Used as a hint; by default a valid F141 reply from a new IP is adopted automatically.")
     parser.add_argument("--strict-camera-ip", action="store_true", help="Require F141 replies to come from --camera-ip. Disables dynamic IP rediscovery.")
@@ -863,8 +878,12 @@ def main(argv=None) -> int:
         help="Target HLS segment duration; an H.264 IDR is forced at each boundary and FFmpeg is fed asynchronously."
     )
     parser.add_argument(
-        "--hls-list-size", type=int, default=6,
-        help="Number of segments kept in the live HLS playlist."
+        "--hls-list-size", type=int, default=15,
+        help="Number of segments kept in the live HLS playlist. Default: 15 (about 30 seconds)."
+    )
+    parser.add_argument(
+        "--hls-delete-threshold", type=int, default=10,
+        help="Unreferenced HLS segments kept before deletion. Default: 10 (about 20 seconds)."
     )
     parser.add_argument(
         "--hls-http-port", type=int, default=8080,
@@ -905,7 +924,7 @@ def main(argv=None) -> int:
     )
     if args.log_file:
         sys.stderr = rotating_log
-        print("\n=== HiChip Streamer v0.22.1 START ===", file=sys.stderr, flush=True)
+        print("\n=== HiChip Streamer v0.22.2 START ===", file=sys.stderr, flush=True)
         print(f"PID={os.getpid()} cwd={Path.cwd()}", file=sys.stderr, flush=True)
 
     if not args.video_key:
@@ -923,7 +942,12 @@ def main(argv=None) -> int:
         return 2
     aes_decrypt = load_aes_decryptor()
     hls = FfmpegHlsSink(
-        args.ffmpeg, args.hls_dir or None, args.video_fps, args.hls_time, max(1, args.hls_list_size)
+        args.ffmpeg,
+        args.hls_dir or None,
+        args.video_fps,
+        args.hls_time,
+        max(1, args.hls_list_size),
+        max(1, args.hls_delete_threshold),
     )
     hls_http = HlsHttpServer(args.hls_dir or None, args.hls_http_bind, args.hls_http_port)
     hls_http.start()
@@ -1409,7 +1433,7 @@ def main(argv=None) -> int:
         try: secondary.close()
         except Exception: pass
         if args.log_file:
-            print("=== HiChip Streamer v0.22.1 STOP ===", file=sys.stderr, flush=True)
+            print("=== HiChip Streamer v0.22.2 STOP ===", file=sys.stderr, flush=True)
             sys.stderr = original_stderr
             rotating_log.close()
 

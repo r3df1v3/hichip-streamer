@@ -2,7 +2,7 @@
 
 Experimental LAN-only video streamer for selected HiChip/Genbolt cameras. It talks directly to the camera over the observed PPPP/HiChip protocol, reconstructs HXVF video records, decrypts the encrypted HEVC prefix, and optionally uses FFmpeg to publish an H.264/HLS stream.
 
-> **Status:** v0.22.1. This maintenance release adds dynamic camera-IP rediscovery after DHCP address changes, while retaining the externalized device-specific configuration and captured session material introduced in v0.22.0. Device-specific captured authentication/session material is deliberately **not included** in the public tree.
+> **Status:** v0.22.2. This maintenance release makes live HLS playback more tolerant of brief client/network stalls by widening the rolling playlist and retaining recently expired segments longer. It retains the dynamic camera-IP rediscovery introduced in v0.22.1 and the externalized device-specific material introduced in v0.22.0. Device-specific captured authentication/session material is deliberately **not included** in the public tree.
 
 ## Why this project exists
 
@@ -23,6 +23,7 @@ The tested camera produced HEVC at 2304x1296 and about 12.5 fps. The default HLS
 - AES-128-ECB + XOR `0x3F` decryption of the encrypted 96-byte I-frame prefix observed on the tested device.
 - Annex-B HEVC extraction.
 - Asynchronous FFmpeg transcoding to H.264/HLS without blocking the UDP receive/ACK loop.
+- Resilient live HLS defaults: 15 two-second playlist entries plus 10 recently unreferenced segments retained before deletion.
 - Integrated HLS HTTP server, defaulting to `0.0.0.0:8080`.
 - Rotating logs and a D102 watchdog suitable for a Windows service manager such as NSSM.
 - FFmpeg discovery through `PATH` or next to the executable.
@@ -112,7 +113,7 @@ The public build does not bundle `private_material`; keep that directory next to
 
 The program runs indefinitely by default (`--seconds 0`). After the first D102 packet, the default watchdog exits with return code 20 if no D102 arrives for 30 seconds. A service manager can restart the process on exit.
 
-Useful options include `--quiet-console`, `--log-file`, `--log-max-mb`, `--log-backups`, `--stream-watchdog`, `--hls-http-bind`, and `--hls-http-port`.
+Useful options include `--quiet-console`, `--log-file`, `--log-max-mb`, `--log-backups`, `--stream-watchdog`, `--hls-list-size`, `--hls-delete-threshold`, `--hls-http-bind`, and `--hls-http-port`.
 
 ## Reverse proxy example
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.2 - resilient live HLS playback
+
+- Increased the default live playlist from 6 to 15 two-second segments, providing about 30 seconds of recovery window without moving normal playback away from the live edge.
+- Added `--hls-delete-threshold`, defaulting to 10, so FFmpeg keeps about 20 seconds of recently unreferenced segments before deleting them.
+- Added startup logging for the effective HLS playlist and deletion window.
+- Renamed the Windows client build to `hichip-client222.exe`.
+
 ## 0.22.1 - dynamic camera rediscovery
 
 - Fixed a reconnect failure when DHCP changes the camera IPv4 address.

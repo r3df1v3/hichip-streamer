@@ -38,3 +38,7 @@ All user-facing strings, comments, documentation, and build messages were conver
 ## v0.22.1: resilient DHCP rediscovery
 
 A long-running deployment exposed a reconnect bug: after the camera obtained a new DHCP address, the streamer continued receiving valid LAN `F141` replies but ignored them because their source IP no longer matched the configured `--camera-ip`. v0.22.1 changes the configured address into a preferred hint by default and adopts the newly discovered endpoint. `--strict-camera-ip` restores fixed-IP matching for networks with multiple compatible cameras.
+
+## v0.22.2: resilient live HLS playback
+
+Testing through the public Cloudflare route confirmed that neither the live playlist nor transport-stream segments were cached. The more likely failure mode was the original 12-second rolling playlist: a briefly delayed player could request a segment after FFmpeg had already deleted it. v0.22.2 changes the defaults to 15 two-second playlist entries and retains 10 recently unreferenced segments before deletion, providing roughly 50 seconds of total segment availability while normal playback remains near the live edge.
